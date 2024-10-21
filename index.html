@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Game 2048</title>
+  <link rel="stylesheet" href="https://pyscript.net/alpha/pyscript.css" />
+  <script defer src="https://pyscript.net/alpha/pyscript.js"></script>
+  <style>
+    /*  Bạn có thể thêm CSS tùy chỉnh cho game ở đây */
+    body {
+      background-color: #FAF8EF;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    #game-container {
+      position: relative;
+    }
+    canvas {
+      border: 5px solid #BBADA0;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas" width="475" height="475"></canvas>
+  </div>
+  <py-script>
+import numpy as np
+import pygame
+import random
+import sys
+import asyncio
+
+# Constants
+WIDTH, HEIGHT = 475, 475
+SCREEN_COLOR = (250, 248, 239)
+BOARD_SIZE = 4
+ROWS, COLS = BOARD_SIZE, BOARD_SIZE
+TILE_SIZE = 100
+GAP = 15
+XSHIFT = 10
+YSHIFT = 10
+XSHIFT2 = 150
+YSHIFT2 = 65
+XSHIFT3 = 335
+YSHIFT3 = 120
+BOARD_COLOR = (187, 173, 160)
+TRANSPARENT_ALPHA = 128
+WHITE = (255, 255, 255)
+GAMEOVER_LBL_COLOR = (238, 228, 218)
+
+TILES_COLORS = {
+    0: (205, 193, 180),
+    2: (238, 228, 218),
+    4: (237, 224, 200),
+    8: (242, 177, 121),
+    16: (245, 149, 99),
+    32: (246, 124, 95),
+    64: (246, 94, 59),
+    128: (237, 207, 114),
+    256: (237, 204, 97),
+    512: (237, 200, 80),
+    1024: (237, 197, 63),
+    2048: (237, 194, 46)
+}
+
+LBLS_COLORS = {
+    0: (205, 193, 180),
+    2: (119, 110, 101),
+    4: (119, 110, 101),
+    8: (249, 246, 243),
+    16: (249, 246, 243),
+    32: (249, 246, 243),
+    64: (249, 246, 243),
+    128: (249, 246, 243),
+    256: (249, 246, 243),
+    512: (249, 246, 243),
+    1024: (249, 246, 243),
+    2048: (249, 246, 243)
+}
+
+class ScoreManager:
+    def __init__(self):
+        self.score = 0
+        self.best = 0
+
+    def check_highscore(self):
+        if self.score >= self.best:
+            self.best = self.score
+
+    def reset_score(self):
+        self.score = 0
+
+class Menu:
+    def __init__(self, screen):
+        self.screen = screen
+        self.transparent_screen = pygame.Surface((BOARD_WIDTH * TILE_SIZE, BOARD_HEIGHT * TILE_SIZE))
+        self.transparent_screen.set_alpha(TRANSPARENT_ALPHA)
+        self.transparent_screen.fill(WHITE)
+        self.go_font = pygame.font.SysFont('verdana', 30, True)
+        self.go_lbl = self.go_font.render('Game over!', 1, GAMEOVER_LBL_COLOR)
+        self.go_pos = (XSHIFT + (BOARD_WIDTH * TILE_SIZE) // 2 - self.go_lbl.get_rect().width // 2,
+                        YSHIFT3 + (BOARD_HEIGHT * TILE_SIZE) // 2 - self.go_lbl.get_rect().height // 2 - 35)
+        self.active = False
+
+    def show(self):
+        if self.active:
+            self.screen.blit(self.transparent_screen, (XSHIFT, YSHIFT3))
+            self.screen.blit(self.go_lbl, self.go_pos)
+
+    def hide(self, bg):
+        self.active = False
+        pygame.draw.rect(self.screen, BOARD_COLOR, bg)
+
+class GUI:
+    def __init__(self, screen):
+        self.screen = screen
+        self.score_font = pygame.font.SysFont('verdana', 15, bold=True)
+        self.board_rect = (XSHIFT, YSHIFT3, BOARD_WIDTH * TILE_SIZE, BOARD_HEIGHT * TILE_SIZE)
+        self.menu = Menu(screen)
+
+    def show_start(self):
+        pygame.draw.rect(self.screen, BOARD_COLOR, self.board_rect)
+
+    def update_scores(self, score_value, best_value):
+        self.score_lbl = self.score_font.render(str(score_value), 0, WHITE)
+        self.score_pos = (XSHIFT2 + (90) // 2 - self.score_lbl.get_rect().width // 2,
+                          YSHIFT + (42) // 2 - self.score_lbl.get_rect().height // 2 + 8)
+        self.screen.blit(self.score_lbl, self.score_pos)
+
+        self.best_lbl = self.score_font.render(str(best_value), 0, WHITE)
+        self.best_pos = (290 + (90) // 2 - self.best_lbl.get_rect().width // 2,
+                         YSHIFT + (42) // 2 - self.best_lbl.get_rect().height // 2 + 8)
+        self.screen.blit(self.best_lbl, self.best_pos)
+
+    def action_listener(self, event):
+        if self.menu.active:
+            self.menu.hide(self.board_rect)
+            return True
+        return False
+
+class Game:
+    def __init__(self, screen):
+        self.screen = screen
+        self.tiles = np.zeros((ROWS, COLS))
+        self.gui = GUI(screen)
+        self.score_manager = ScoreManager()
+        self.lbl_font = pygame.font.SysFont('verdana', 30, bold=True)
+        self.generate = False
+        self.playing = True
+
+    def draw_board(self):
+        rShift, cShift = GAP, GAP
+        for row in range(ROWS):
+            for col in range(COLS):
+                tile_num = int(self.tiles[row][col])
+                tile_color = TILES_COLORS[tile_num]
+                pygame.draw.rect(self.screen, tile_color,
+                                 (XSHIFT + cShift + col * TILE_SIZE, YSHIFT3 + rShift + row * TILE_SIZE, TILE_SIZE,
+                                  TILE_SIZE))
+                tile_lbl_color = LBLS_COLORS[tile_num]
+                lbl = self.lbl_font.render(str(tile_num), 0, tile_lbl_color)
+                lbl_pos = (XSHIFT + cShift + col * TILE_SIZE + TILE_SIZE // 2 - lbl.get_rect().width // 2,
+                           YSHIFT3 + rShift + row * TILE_SIZE + TILE_SIZE // 2 - lbl.get_rect().height // 2)
+                self.screen.blit(lbl, lbl_pos)
+                cShift += GAP
+            rShift += GAP
+            cShift = GAP
+
+    def generate_tiles(self, first=False):
+        empty_tiles = []
+        for row in range(ROWS):
+            for col in range(COLS):
+                if self.tiles[row][col] == 0:
+                    empty_tiles.append((row, col))
+        idx = random.randrange(0, len(empty_tiles))
+        row, col = empty_tiles[idx]
+        rnd = random.randint(1, 10)
+        tile_value = 2
+        if not first and rnd > 7:
+            tile_value = 4
+        self.tiles[row][col] = tile_value
+
+    def __move_and_merge(self, direction, row, col):
+        dx, dy = 0, 0
+        if direction == 'UP':
+            dy = -1
+        elif direction == 'DOWN':
+            dy = 1
+        elif direction == 'RIGHT':
+            dx = 1
+        elif direction == 'LEFT':
+            dx = -1
+        try:
+            if self.tiles[row + dy][col + dx] == 0:
+                value = self.tiles[row][col]
+                self.tiles[row][col] = 0
+                self.tiles[row + dy][col + dx] = value
+                self.generate = True
+                self.__move_and_merge(direction, row + dy, col + dx)
+            elif self.tiles[row][col] == self.tiles[row + dy][col + dx]:
+                self.tiles[row][col] = 0
+                self.tiles[row + dy][col + dx] *= 2
+                self.score_manager.score += int(self.tiles[row + dy][col + dx])
+                self.generate = True
+        except IndexError:
+            return
+
+    def slide_tiles(self, direction):
+        if direction == 'UP':
+            for row in range(1, ROWS):
+                for col in range(COLS):
+                    if self.tiles[row][col] != 0:
+                        self.__move_and_merge(direction, row, col)
+        if direction == 'DOWN':
+            for row in range(ROWS - 2, -1, -1):
+                for col in range(COLS):
+                    if self.tiles[row][col] != 0:
+                        self.__move_and_merge(direction, row, col)
+        if direction == 'RIGHT':
+            for row in range(ROWS):
+                for col in range(COLS - 2, -1, -1):
+                    if self.tiles[row][col] != 0:
+                        self.__move_and_merge(direction, row, col)
+        if direction == 'LEFT':
+            for row in range(ROWS):
+                for col in range(1, COLS):
+                    if self.tiles[row][col] != 0:
+                        self.__move_and_merge(direction, row, col)
+
+    def __full_board(self):
+        for row in range(ROWS):
+            for col in range(COLS):
+                if self.tiles[row][col] == 0:
+                    return False
+        return True
+
+    def __no_more_moves(self):
+        for row in range(1, ROWS):
+            for col in range(COLS):
+                if self.tiles[row][col] == self.tiles[row - 1][col]:
+                    return False
+        for row in range(ROWS - 2, -1, -1):
+            for col in range(COLS):
+                if self.tiles[row][col] == self.tiles[row + 1][col]:
+                    return False
+        for row in range(ROWS):
+            for col in range(COLS - 2, -1, -1):
+                if self.tiles[row][col] == self.tiles[row][col + 1]:
+                    return False
+        for row in range(ROWS):
+            for col in range(1, COLS):
+                if self.tiles[row][col] == self.tiles[row][col - 1]:
+                    return False
+        return True
+
+    def is_game_over(self):
+        if self.__full_board():
+            return self.__no_more_moves()
+        return False
+
+    def new(self):
+        self.tiles = np.zeros((ROWS, COLS))
+        self.score_manager.reset_score()
+        self.generate_tiles()
+
+async def game_loop(screen, canvas):
+    game = Game(screen)
+    game.gui.show_start()
+    for i in range(2):
+        game.generate_tiles(True)
+
+    while game.playing:
+        game.draw_board()
+        game.gui.menu.show()
+        game.gui.update_scores(game.score_manager.score, game.score_manager.best)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP:
+                    game.slide_tiles('UP')
+                if event.key == pygame.K_DOWN:
+                    game.slide_tiles('DOWN')
+                if event.key == pygame.K_RIGHT:
+                    game.slide_tiles('RIGHT')
+                if event.key == pygame.K_LEFT:
+                    game.slide_tiles('LEFT')
+                if game.generate:
+                    game.generate_tiles()
+                    game.generate = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    if game.gui.action_listener(event):
+                        game.new()
+        if game.is_game_over():
+            game.gui.menu.active = True
+        game.score_manager.check_highscore()
+
+        pygame.surfarray.blit_array(canvas, screen)
+        pyscript.write('game-canvas', canvas.tobytes())
+        await asyncio.sleep(0)
+
+async def main():
+    pygame.init()
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    canvas = pygame.surfarray.make_surface(screen)
+    pygame.display.set_caption('2048')
+    screen.fill(SCREEN_COLOR)
+
+    await game_loop(screen, canvas)
+
+asyncio.run(main())
+  </py-script>
+</body>
+</html>
