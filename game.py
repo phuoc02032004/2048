@@ -1,87 +1,11 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Game 2048</title>
-  <link rel="stylesheet" href="https://pyscript.net/alpha/pyscript.css" />
-  <script defer src="https://pyscript.net/alpha/pyscript.js"></script>
-  <style>
-    /*  Bạn có thể thêm CSS tùy chỉnh cho game ở đây */
-    body {
-      background-color: #FAF8EF;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-    }
-    #game-container {
-      position: relative;
-    }
-    canvas {
-      border: 5px solid #BBADA0;
-    }
-  </style>
-</head>
-<body>
-  <div id="game-container">
-    <canvas id="game-canvas" width="475" height="475"></canvas>
-  </div>
-  <py-script>
+from constants import *
 import numpy as np
 import pygame
 import random
 import sys
-import asyncio
-
-# Constants
-WIDTH, HEIGHT = 475, 475
-SCREEN_COLOR = (250, 248, 239)
-BOARD_SIZE = 4
-ROWS, COLS = BOARD_SIZE, BOARD_SIZE
-TILE_SIZE = 100
-GAP = 15
-XSHIFT = 10
-YSHIFT = 10
-XSHIFT2 = 150
-YSHIFT2 = 65
-XSHIFT3 = 335
-YSHIFT3 = 120
-BOARD_COLOR = (187, 173, 160)
-TRANSPARENT_ALPHA = 128
-WHITE = (255, 255, 255)
-GAMEOVER_LBL_COLOR = (238, 228, 218)
-
-TILES_COLORS = {
-    0: (205, 193, 180),
-    2: (238, 228, 218),
-    4: (237, 224, 200),
-    8: (242, 177, 121),
-    16: (245, 149, 99),
-    32: (246, 124, 95),
-    64: (246, 94, 59),
-    128: (237, 207, 114),
-    256: (237, 204, 97),
-    512: (237, 200, 80),
-    1024: (237, 197, 63),
-    2048: (237, 194, 46)
-}
-
-LBLS_COLORS = {
-    0: (205, 193, 180),
-    2: (119, 110, 101),
-    4: (119, 110, 101),
-    8: (249, 246, 243),
-    16: (249, 246, 243),
-    32: (249, 246, 243),
-    64: (249, 246, 243),
-    128: (249, 246, 243),
-    256: (249, 246, 243),
-    512: (249, 246, 243),
-    1024: (249, 246, 243),
-    2048: (249, 246, 243)
-}
 
 class ScoreManager:
+
     def __init__(self):
         self.score = 0
         self.best = 0
@@ -92,56 +16,91 @@ class ScoreManager:
 
     def reset_score(self):
         self.score = 0
+        
+        
+        
 
 class Menu:
+
     def __init__(self, screen):
         self.screen = screen
-        self.transparent_screen = pygame.Surface((BOARD_WIDTH * TILE_SIZE, BOARD_HEIGHT * TILE_SIZE))
+        self.transparent_screen = pygame.Surface((BOARD_WIDTH, BOARD_HEIGHT))
         self.transparent_screen.set_alpha(TRANSPARENT_ALPHA)
         self.transparent_screen.fill(WHITE)
         self.go_font = pygame.font.SysFont('verdana', 30, True)
         self.go_lbl = self.go_font.render('Game over!', 1, GAMEOVER_LBL_COLOR)
-        self.go_pos = (XSHIFT + (BOARD_WIDTH * TILE_SIZE) // 2 - self.go_lbl.get_rect().width // 2,
-                        YSHIFT3 + (BOARD_HEIGHT * TILE_SIZE) // 2 - self.go_lbl.get_rect().height // 2 - 35)
+        self.go_pos = (XSHIFT + BOARD_WIDTH // 2 - self.go_lbl.get_rect().width // 2, YSHIFT3 + BOARD_HEIGHT // 2 - self.go_lbl.get_rect().height // 2 - 35)
+        self.tryagain_btn = pygame.image.load('./images/tryagain_btn.png')
+        self.tryagain_btn = pygame.transform.scale(self.tryagain_btn, (115, 40))
+        self.tryagain_btn_pos = (XSHIFT + BOARD_WIDTH // 2 - self.tryagain_btn.get_width() // 2, YSHIFT3 + BOARD_HEIGHT // 2 - self.tryagain_btn.get_height() // 2 + 35)
+        self.tryagain_btn_rect = self.tryagain_btn.get_rect(topleft=self.tryagain_btn_pos)
         self.active = False
 
     def show(self):
         if self.active:
             self.screen.blit(self.transparent_screen, (XSHIFT, YSHIFT3))
             self.screen.blit(self.go_lbl, self.go_pos)
+            self.screen.blit(self.tryagain_btn, self.tryagain_btn_pos)
 
     def hide(self, bg):
         self.active = False
         pygame.draw.rect(self.screen, BOARD_COLOR, bg)
 
 class GUI:
+
     def __init__(self, screen):
         self.screen = screen
+        self.logo = pygame.image.load('./images/logo.png')
+        self.logo = pygame.transform.scale(self.logo, (self.logo.get_width() // 2, self.logo.get_height() // 2))
+        self.logo_pos = (XSHIFT, YSHIFT)
+        self.score_rect = pygame.image.load('./images/score_rect.png')
+        self.score_rect = pygame.transform.scale(self.score_rect, (90, 42))
+        self.score_rect_pos = (XSHIFT2, YSHIFT)
+        self.best_rect = pygame.image.load('./images/best_rect.png')
+        self.best_rect = pygame.transform.scale(self.best_rect, (90, 42))
+        self.best_rect_pos = (XSHIFT2 + self.score_rect.get_width() + 2, YSHIFT)
         self.score_font = pygame.font.SysFont('verdana', 15, bold=True)
-        self.board_rect = (XSHIFT, YSHIFT3, BOARD_WIDTH * TILE_SIZE, BOARD_HEIGHT * TILE_SIZE)
+        self.message = pygame.image.load('./images/message.png')
+        self.message = pygame.transform.scale(self.message, (self.message.get_width() // 2, self.message.get_height() // 2))
+        self.message_pos = (XSHIFT, YSHIFT2)
+        self.newgame_btn = pygame.image.load('./images/newgame_btn.png')
+        self.newgame_btn = pygame.transform.scale(self.newgame_btn, (115, 40))
+        self.newgame_btn_pos = (XSHIFT3, YSHIFT2)
+        self.newgame_btn_rect = self.newgame_btn.get_rect(topleft=self.newgame_btn_pos)
+        self.board_rect = (XSHIFT, YSHIFT3, BOARD_WIDTH, BOARD_HEIGHT)
+        self.ad_pos = (14, HEIGHT - 90)
         self.menu = Menu(screen)
 
     def show_start(self):
+        self.screen.blit(self.logo, self.logo_pos)
+        self.screen.blit(self.score_rect, self.score_rect_pos)
+        self.screen.blit(self.best_rect, self.best_rect_pos)
+        self.screen.blit(self.message, self.message_pos)
+        self.screen.blit(self.newgame_btn, self.newgame_btn_pos)
         pygame.draw.rect(self.screen, BOARD_COLOR, self.board_rect)
+        # self.screen.blit(self.ad, self.ad_pos)
 
     def update_scores(self, score_value, best_value):
+        self.screen.blit(self.score_rect, self.score_rect_pos)
         self.score_lbl = self.score_font.render(str(score_value), 0, WHITE)
-        self.score_pos = (XSHIFT2 + (90) // 2 - self.score_lbl.get_rect().width // 2,
-                          YSHIFT + (42) // 2 - self.score_lbl.get_rect().height // 2 + 8)
+        self.score_pos = (XSHIFT2 + self.score_rect.get_width() // 2 - self.score_lbl.get_rect().width // 2, YSHIFT + self.score_rect.get_height() // 2 - self.score_lbl.get_rect().height // 2 + 8)
         self.screen.blit(self.score_lbl, self.score_pos)
-
+        self.screen.blit(self.best_rect, self.best_rect_pos)
         self.best_lbl = self.score_font.render(str(best_value), 0, WHITE)
-        self.best_pos = (290 + (90) // 2 - self.best_lbl.get_rect().width // 2,
-                         YSHIFT + (42) // 2 - self.best_lbl.get_rect().height // 2 + 8)
+        self.best_pos = (290 + self.best_rect.get_width() // 2 - self.best_lbl.get_rect().width // 2, YSHIFT + self.best_rect.get_height() // 2 - self.best_lbl.get_rect().height // 2 + 8)
         self.screen.blit(self.best_lbl, self.best_pos)
 
     def action_listener(self, event):
         if self.menu.active:
-            self.menu.hide(self.board_rect)
+            if self.menu.tryagain_btn_rect.collidepoint(event.pos):
+                self.menu.hide(self.board_rect)
+                return True
+        elif self.newgame_btn_rect.collidepoint(event.pos):
             return True
         return False
 
 class Game:
+
     def __init__(self, screen):
         self.screen = screen
         self.tiles = np.zeros((ROWS, COLS))
@@ -157,13 +116,10 @@ class Game:
             for col in range(COLS):
                 tile_num = int(self.tiles[row][col])
                 tile_color = TILES_COLORS[tile_num]
-                pygame.draw.rect(self.screen, tile_color,
-                                 (XSHIFT + cShift + col * TILE_SIZE, YSHIFT3 + rShift + row * TILE_SIZE, TILE_SIZE,
-                                  TILE_SIZE))
+                pygame.draw.rect(self.screen, tile_color, (XSHIFT + cShift + col * TILE_SIZE, YSHIFT3 + rShift + row * TILE_SIZE, TILE_SIZE, TILE_SIZE))
                 tile_lbl_color = LBLS_COLORS[tile_num]
                 lbl = self.lbl_font.render(str(tile_num), 0, tile_lbl_color)
-                lbl_pos = (XSHIFT + cShift + col * TILE_SIZE + TILE_SIZE // 2 - lbl.get_rect().width // 2,
-                           YSHIFT3 + rShift + row * TILE_SIZE + TILE_SIZE // 2 - lbl.get_rect().height // 2)
+                lbl_pos = (XSHIFT + cShift + col * TILE_SIZE + TILE_SIZE // 2 - lbl.get_rect().width // 2, YSHIFT3 + rShift + row * TILE_SIZE + TILE_SIZE // 2 - lbl.get_rect().height // 2)
                 self.screen.blit(lbl, lbl_pos)
                 cShift += GAP
             rShift += GAP
@@ -266,19 +222,22 @@ class Game:
         self.score_manager.reset_score()
         self.generate_tiles()
 
-async def game_loop(screen, canvas):
+def main():
+    pygame.init()
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption('2048')
+    screen.fill(SCREEN_COLOR)
     game = Game(screen)
     game.gui.show_start()
+    
     for i in range(2):
         game.generate_tiles(True)
-
     while game.playing:
         game.draw_board()
         game.gui.menu.show()
         game.gui.update_scores(game.score_manager.score, game.score_manager.best)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
@@ -299,21 +258,6 @@ async def game_loop(screen, canvas):
         if game.is_game_over():
             game.gui.menu.active = True
         game.score_manager.check_highscore()
+        pygame.display.update()
 
-        pygame.surfarray.blit_array(canvas, screen)
-        pyscript.write('game-canvas', canvas.tobytes())
-        await asyncio.sleep(0)
-
-async def main():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    canvas = pygame.surfarray.make_surface(screen)
-    pygame.display.set_caption('2048')
-    screen.fill(SCREEN_COLOR)
-
-    await game_loop(screen, canvas)
-
-asyncio.run(main())
-  </py-script>
-</body>
-</html>
+main()
