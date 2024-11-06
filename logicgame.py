@@ -53,10 +53,18 @@ class PauseMenu:
         self.pause_lbl = self.pause_font.render('Paused', 1, GAMEOVER_LBL_COLOR)
         self.pause_pos = (XSHIFT + BOARD_WIDTH // 2 - self.pause_lbl.get_rect().width // 2, 
                        YSHIFT3 + BOARD_HEIGHT // 2 - self.pause_lbl.get_rect().height // 2 - 35)
-        self.back_btn = pygame.image.load('./images/btn_back.jpg')
+        
+        self.resume_btn = pygame.image.load('./images/icon_continue.png')
+        self.resume_btn = pygame.transform.scale(self.resume_btn, (150, 50))
+        self.resume_btn_pos = (XSHIFT + BOARD_WIDTH // 2 - self.resume_btn.get_width() // 2,
+                               YSHIFT3 + BOARD_HEIGHT // 2 - self.resume_btn.get_height() // 2 + 10)
+        self.resume_btn_rect = self.resume_btn.get_rect(topleft=self.resume_btn_pos)
+
+
+        self.back_btn = pygame.image.load('./images/icon_back.png')
         self.back_btn = pygame.transform.scale(self.back_btn, (115, 40))
         self.back_btn_pos = (XSHIFT + BOARD_WIDTH // 2 - self.back_btn.get_width() // 2,
-                                 YSHIFT3 + BOARD_HEIGHT // 2 - self.back_btn.get_height() // 2 + 35)
+                                 YSHIFT3 + BOARD_HEIGHT // 2 - self.back_btn.get_height() // 2 + 80)
         self.back_btn_rect = self.back_btn.get_rect(topleft=self.back_btn_pos)
         self.active = False
 
@@ -64,6 +72,7 @@ class PauseMenu:
         if self.active:
             self.screen.blit(self.transparent_screen, (XSHIFT, YSHIFT3))
             self.screen.blit(self.pause_lbl, self.pause_pos)
+            self.screen.blit(self.resume_btn, self.resume_btn_pos)
             self.screen.blit(self.back_btn, self.back_btn_pos)
 
     def hide(self, bg):
@@ -94,7 +103,7 @@ class GUI:
         if mode == "4 x 4":
             self.board_rect = (XSHIFT, YSHIFT3, BOARD_WIDTH, BOARD_HEIGHT)
         elif mode == "6 x 6":
-            self.board_rect = (XSHIFT, YSHIFT3, BOARD_WIDTH + 80, BOARD_HEIGHT + 80)
+            self.board_rect = (XSHIFT, YSHIFT3, BOARD_WIDTH + 136, BOARD_HEIGHT + 136)
         
         self.menu = Menu(screen)
         self.pause_menu = PauseMenu(screen)
@@ -122,6 +131,8 @@ class GUI:
             if self.pause_menu.back_btn_rect.collidepoint(event.pos):
                 self.pause_menu.hide(self.board_rect)
                 return 'MENU'
+            elif self.pause_menu.resume_btn_rect.collidepoint(event.pos):
+                self.pause_menu.hide(self.board_rect)
         elif self.menu.active:
             if self.menu.tryagain_btn_rect.collidepoint(event.pos):
                 self.menu.hide(self.board_rect)
@@ -266,43 +277,70 @@ class Game:
 
     def new(self):
         self.tiles = np.zeros((ROWS, COLS))
+        
+        if self.mode == "4 x 4":
+            self.tiles = np.zeros((4, 4))
+        elif self.mode == "6 x 6":
+            self.tiles = np.zeros((6, 6))
+    
         self.score_manager.reset_score()
-        self.generate_tiles()
+        self.generate_tiles(first=True)
 
     def run(self):
-        global current_state # Khai báo current_state là biến toàn cục ở đây
+        global current_state  # Khai báo current_state là biến toàn cục ở đây
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_UP:
-                        self.slide_tiles('UP')
-                    if event.key == pygame.K_DOWN:
-                        self.slide_tiles('DOWN')
-                    if event.key == pygame.K_RIGHT:
-                        self.slide_tiles('RIGHT')
-                    if event.key == pygame.K_LEFT:
-                        self.slide_tiles('LEFT')
-                    if self.generate:
-                        self.generate_tiles()
-                        self.generate = False
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
-                        result = self.gui.action_listener(event)
-                        if result == 'MENU':
-                            current_state = "MENU"
-                            return 
-                        elif result is True:
-                            self.new()
+            
+            # Kiểm tra nếu pause_menu đang hoạt động; chỉ lắng nghe các sự kiện của menu tạm dừng nếu nó đang hoạt động
+                if self.gui.pause_menu.active:
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        if event.button == 1:
+                            result = self.gui.action_listener(event)
+                            if result == 'MENU':
+                                current_state = "MENU"
+                                return
+                            elif result is True:
+                                self.new()
+                else:  # Xử lý các sự kiện trò chơi chỉ khi menu tạm dừng không hoạt động
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_UP:
+                            self.slide_tiles('UP')
+                        elif event.key == pygame.K_DOWN:
+                            self.slide_tiles('DOWN')
+                        elif event.key == pygame.K_RIGHT:
+                            self.slide_tiles('RIGHT')
+                        elif event.key == pygame.K_LEFT:
+                            self.slide_tiles('LEFT')
+                    
+                    # Nếu các ô được di chuyển và gộp lại, tạo ra một ô mới
+                        if self.generate:
+                            self.generate_tiles()
+                            self.generate = False
+                
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        if event.button == 1:
+                            result = self.gui.action_listener(event)
+                            if result == 'MENU':
+                                current_state = "MENU"
+                                return
+                            elif result is True:
+                                self.new()
 
+        # Hiển thị và cập nhật màn hình
             self.screen.fill(SCREEN_COLOR)
             self.draw_board()
             self.gui.menu.show()
             self.gui.pause_menu.show()
             self.gui.update_scores(self.score_manager.score, self.score_manager.best)
+
+        # Kiểm tra kết thúc trò chơi và hiển thị menu game over nếu cần
             if self.is_game_over():
                 self.gui.menu.active = True
+        
             self.score_manager.check_highscore()
             self.gui.show_start()
             pygame.display.update()
+
+        
