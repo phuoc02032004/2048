@@ -3,6 +3,8 @@ import sys
 import numpy as np
 import random
 from constants import *
+from pymongo import MongoClient
+import bcrypt
 
 class ScoreManager:
     def __init__(self):

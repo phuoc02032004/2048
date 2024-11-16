@@ -1,144 +1,130 @@
 import pygame
-import os
 import sys
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import firestore
-from logicgame import Game
+from constants import *
+from logicgame import Game, ScoreManager, GUI  # Đảm bảo ScoreManager được import
+from pymongo import MongoClient
+import bcrypt
 
+# Kết nối với MongoDB
+client = MongoClient("mongodb://localhost:27017/")
+db = client["database"]
+users_collection = db["users"]
 pygame.init()
 
-width = 800
-height = 600
-screen = pygame.display.set_mode((width, height))
+# Tải âm thanh
+pygame.mixer.init()  # Khởi tạo mixer cho âm thanh
+BACKGROUND_MUSIC = pygame.mixer.Sound("background_music.mp3")
+BUTTON_CLICK_SOUND = pygame.mixer.Sound("button_click.wav")
+GAME_WIN_SOUND = pygame.mixer.Sound("game_win.mp3")
+GAME_OVER_SOUND = pygame.mixer.Sound("game_over.mp3")
 
-pygame.display.set_caption("Game Login")
+pygame.mixer.music.load("background_music.mp3")
+pygame.mixer.music.set_volume(0.2)
+pygame.mixer.music.play(-1, 0.0)
 
-white = (255, 255, 255)
-black = (0, 0, 0)
-red = (255, 0, 0)
-green = (0, 255, 0)
+# Cài đặt màn hình trò chơi
+screen = pygame.display.set_mode((720, 720))
+pygame.display.set_caption('2048')
 
-font = pygame.font.Font(None, 32)
+# Định nghĩa màu sắc và font chữ
+BACKGROUND_COLOR = (242, 242, 218)
+BUTTON_COLOR = (119, 110, 101)
+HOVER_COLOR = (142, 121, 101)
+TEXT_COLOR = (255, 255, 255)
+font = pygame.font.SysFont('Corbel', 40, bold=True)
 
-cred = credentials.Certificate("project-5418815373818035308-firebase-adminsdk-ipz4g-3c1b1e9521.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+# Các nút và giao diện người dùng
+text_start = font.render('Start', True, TEXT_COLOR)
+text_setting = font.render('Setting', True, TEXT_COLOR)
+text_exit = font.render('Exit', True, TEXT_COLOR)
+text_easy = font.render('4 x 4', True, TEXT_COLOR)
+text_hard = font.render('6 x 6', True, TEXT_COLOR)
 
-def check_login(username, password):
-    user_ref = db.collection('users').document(username)
-    user = user_ref.get()
-    if user.exists:
-        if user.to_dict()["password"] == password:
-            return True
-        else:
-            return False
-    else:
-        return False
+button_width, button_height = 200, 60
+start_button_rect = pygame.Rect(260, 250, button_width, button_height)
+setting_button_rect = pygame.Rect(260, 340, button_width, button_height)
+exit_button_rect = pygame.Rect(260, 430, button_width, button_height)
+easy_button_rect = pygame.Rect(260, 250, button_width, button_height)
+hard_button_rect = pygame.Rect(260, 340, button_width, button_height)
 
-def display_text(text, color, x, y):
-    text_surface = font.render(text, True, color)
-    screen.blit(text_surface, (x, y))
+# Các biến cho màn hình đăng nhập
+input_box_width, input_box_height = 400, 50
+input_rect_user = pygame.Rect(160, 250, input_box_width, input_box_height)
+input_rect_password = pygame.Rect(160, 330, input_box_width, input_box_height)
+button_login_rect = pygame.Rect(260, 420, button_width, button_height)
+button_register_rect = pygame.Rect(260, 510, button_width, button_height)
 
-def input_box(text, color, x, y, width, height, active=False):
-    pygame.draw.rect(screen, color, (x, y, width, height), 2)
-    if active:
-        pygame.draw.rect(screen, color, (x, y, width, height), 2)
-    else:
-        pygame.draw.rect(screen, color, (x, y, width, height), 1)
-    display_text(text, black, x + 5, y + 5)
+# Biến trạng thái cho các ô nhập liệu
+active_input = None
+user_text = ''
+password_text = ''
 
-def handle_login_events(mouse, current_state):
-    global username_input, password_input, username, password
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            exit()
+def save_user_data(username, password):
+    """Lưu thông tin đăng ký vào MongoDB."""
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    user_data = {
+        'username': username,
+        'password': hashed_password.decode('utf-8'),
+    }
+    users_collection.insert_one(user_data)
 
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_RETURN:
-                if username_input.active:
-                    password_input.active = True
-                    username_input.active = False
-                else:
-                    username = username_input.text
-                    password = password_input.text
-                    if check_login(username, password):
-                        print("Đăng nhập thành công!")
-                        current_state = "MENU"
-                        return current_state
-                    else:
-                        print("Sai tên đăng nhập hoặc mật khẩu!")
-                        error_message = font.render("Sai tên đăng nhập hoặc mật khẩu!", True, red)
-                        screen.blit(error_message, (250, 350))
-            elif event.key == pygame.K_BACKSPACE:
-                if username_input.active:
-                    username_input.text = username_input.text[:-1]
-                elif password_input.active:
-                    password_input.text = password_input.text[:-1]
-            else:
-                if username_input.active:
-                    username_input.text += event.unicode
-                elif password_input.active:
-                    password_input.text += event.unicode
+def check_user_data(username, password):
+    """Kiểm tra thông tin đăng nhập từ MongoDB."""
+    user = users_collection.find_one({"username": username})
+    if user and bcrypt.checkpw(password.encode('utf-8'), user["password"].encode('utf-8')):
+        return True
+    return False
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if username_input.rect.collidepoint(event.pos):
-                username_input.active = True
-                password_input.active = False
-            elif password_input.rect.collidepoint(event.pos):
-                username_input.active = False
-                password_input.active = True
-            elif back_button_rect.collidepoint(event.pos):
-                current_state = "MENU"
-                return current_state
-            elif login_button_rect.collidepoint(event.pos):
-                username = username_input.text
-                password = password_input.text
-                if check_login(username, password):
-                    print("Đăng nhập thành công!")
-                    current_state = "MENU"
-                    return current_state
-                else:
-                    print("Sai tên đăng nhập hoặc mật khẩu!")
-                    error_message = font.render("Sai tên đăng nhập hoặc mật khẩu!", True, red)
-                    screen.blit(error_message, (250, 350))
+def draw_button(screen, rect, text_surface, is_hovered):
+    color = HOVER_COLOR if is_hovered else BUTTON_COLOR
+    pygame.draw.rect(screen, color, rect, border_radius=15)
+    screen.blit(text_surface, text_surface.get_rect(center=rect.center))
 
-    return current_state
+def draw_main_menu(screen):
+    screen.fill(BACKGROUND_COLOR)
+    mouse = pygame.mouse.get_pos()
 
-class InputBox:
-    def __init__(self, x, y, width, height):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.color = black
-        self.text = ""
-        self.active = False
+    # Vẽ các nút với hiệu ứng hover
+    draw_button(screen, start_button_rect, text_start, start_button_rect.collidepoint(mouse))
+    draw_button(screen, setting_button_rect, text_setting, setting_button_rect.collidepoint(mouse))
+    draw_button(screen, exit_button_rect, text_exit, exit_button_rect.collidepoint(mouse))
+    pygame.display.update()
 
-    def draw(self):
-        input_box(self.text, self.color, self.rect.x, self.rect.y, self.rect.width, self.rect.height, self.active)
+def draw_select_mode(screen):
+    screen.fill(BACKGROUND_COLOR)
+    mouse = pygame.mouse.get_pos()
 
-username_input = InputBox(250, 200, 300, 40)
-password_input = InputBox(250, 250, 300, 40)
+    # Vẽ các nút chọn chế độ với hiệu ứng hover
+    draw_button(screen, easy_button_rect, text_easy, easy_button_rect.collidepoint(mouse))
+    draw_button(screen, hard_button_rect, text_hard, hard_button_rect.collidepoint(mouse))
 
-back_button_rect = pygame.Rect(250, 300, 300, 40)
-login_button_rect = pygame.Rect(250, 350, 300, 40)
+    pygame.display.update()
 
-def show_login_screen(screen):
-    global current_state
-    while current_state == "LOGIN":
-        mouse = pygame.mouse.get_pos()
-        screen.fill(white)
-        display_text("Đăng nhập", black, 300, 100)
-        username_input.draw()
-        password_input.draw()
-        pygame.draw.rect(screen, green, login_button_rect, 0, 5)
-        display_text("Login", black, 350, 355)
-        pygame.draw.rect(screen, green, back_button_rect, 0, 5)
-        display_text("Back", black, 350, 305)
-        
-        current_state = handle_login_events(mouse, current_state)
+def draw_input_box(screen, rect, text_surface, is_active):
+    color = (255, 215, 0) if is_active else (255, 255, 255)
+    pygame.draw.rect(screen, color, rect, border_radius=10)
+    pygame.draw.rect(screen, (0, 0, 0), rect, 2)  # Vẽ viền
+    screen.blit(text_surface, (rect.x + 10, rect.y + 10))
 
-        pygame.display.flip()
+def draw_login_screen(screen):
+    screen.fill(BACKGROUND_COLOR)
+    mouse = pygame.mouse.get_pos()
 
-# Constants and functions for 2048 game
+    # Vẽ các ô nhập liệu và nút với hiệu ứng hover
+    text_user = font.render('Username', True, TEXT_COLOR)
+    text_password = font.render('Password', True, TEXT_COLOR)
+    
+    # Vẽ ô nhập username và password
+    draw_input_box(screen, input_rect_user, font.render(user_text, True, (0, 0, 0)), active_input == 'user')
+    draw_input_box(screen, input_rect_password, font.render(password_text, True, (0, 0, 0)), active_input == 'password')
+
+    text_login = font.render('Login', True, TEXT_COLOR)
+    draw_button(screen, button_login_rect, text_login, button_login_rect.collidepoint(mouse))
+
+    text_register = font.render('Register', True, TEXT_COLOR)
+    draw_button(screen, button_register_rect, text_register, button_register_rect.collidepoint(mouse))
+
+    pygame.display.update()
 
 # Define colors
 BACKGROUND_COLOR = (242, 242, 218)
@@ -183,31 +169,6 @@ music.play(-1)
 music_on = True
 volume = 0.5
 
-def draw_button(screen, rect, text_surface, is_hovered):
-    color = HOVER_COLOR if is_hovered else BUTTON_COLOR
-    pygame.draw.rect(screen, color, rect, border_radius=15)
-    screen.blit(text_surface, text_surface.get_rect(center=rect.center))
-
-def draw_main_menu(screen):
-    screen.fill(BACKGROUND_COLOR)
-    mouse = pygame.mouse.get_pos()
-    draw_button(screen, start_button_rect, text_start, start_button_rect.collidepoint(mouse))
-    draw_button(screen, setting_button_rect, text_setting, setting_button_rect.collidepoint(mouse))
-    draw_button(screen, exit_button_rect, text_exit, exit_button_rect.collidepoint(mouse))
-    draw_button(screen, login_button_rect, text_login, login_button_rect.collidepoint(mouse))
-    draw_button(screen, back_button_rect, text_back, back_button_rect.collidepoint(mouse))
-    pygame.display.update()
-
-def main_menu():
-    draw_main_menu(screen)
-    pygame.display.update()
-
-def draw_select_mode(screen):
-    screen.fill(BACKGROUND_COLOR)
-    mouse = pygame.mouse.get_pos()
-    draw_button(screen, easy_button_rect, text_easy, easy_button_rect.collidepoint(mouse))
-    draw_button(screen, hard_button_rect, text_hard, hard_button_rect.collidepoint(mouse))
-    pygame.display.update()
 
 def draw_setting_menu(screen):
     screen.fill(BACKGROUND_COLOR)
@@ -225,29 +186,67 @@ def draw_setting_menu(screen):
     draw_button(screen, back_button_rect, text_back, back_button_rect.collidepoint(mouse))
     pygame.display.update()
 
-current_state = "MENU" 
+current_state = "MENU"
+
+def play_button_click_sound():
+    BUTTON_CLICK_SOUND.play()
+
+def play_game_over_sound():
+    GAME_OVER_SOUND.play()
+
+def play_game_win_sound():
+    GAME_WIN_SOUND.play()
+
+def handle_login_events(mouse, current_state):
+    global active_input, user_text, password_text
+
+    if button_login_rect.collidepoint(mouse):
+        # Kiểm tra thông tin đăng nhập
+        if check_user_data(user_text, password_text):
+            print(f"Login successful! Welcome, {user_text}")
+            play_button_click_sound()  # Phát âm thanh khi nhấn nút
+            return "SELECT_MODE"
+        else:
+            print("Invalid username or password!")
+            return "LOGIN"
+    elif button_register_rect.collidepoint(mouse):
+        # Lưu thông tin đăng ký vào file
+        save_user_data(user_text, password_text)
+        print(f"Registered successfully! Username: {user_text}")
+        play_button_click_sound()  # Phát âm thanh khi nhấn nút
+        return "LOGIN"
+    
+    # Kiểm tra sự kiện ô nhập liệu
+    if input_rect_user.collidepoint(mouse):
+        active_input = 'user'
+    elif input_rect_password.collidepoint(mouse):
+        active_input = 'password'
+    else:
+        active_input = None
+
+    return current_state
 
 def handle_main_menu_events(mouse, current_state):
     if start_button_rect.collidepoint(mouse):
-        return "SELECT_MODE"
+        play_button_click_sound()  # Phát âm thanh khi nhấn nút
+        return "LOGIN"  # Chuyển sang màn hình đăng nhập
+    elif back_button_rect.collidepoint(mouse):
+        return "MENU"
     elif setting_button_rect.collidepoint(mouse):
         return "SETTING"
     elif exit_button_rect.collidepoint(mouse):
         pygame.quit()
         sys.exit()
-    elif login_button_rect.collidepoint(mouse):
-        show_login_screen(screen)
-        return "LOGIN"
-    elif back_button_rect.collidepoint(mouse):
-        return "MENU"
     return current_state
 
 def handle_select_mode_events(mouse, mode_selected):
     if easy_button_rect.collidepoint(mouse):
         mode_selected = "4 x 4"
+        play_button_click_sound()  # Phát âm thanh khi nhấn nút
         return "GAME", mode_selected
     elif hard_button_rect.collidepoint(mouse):
         mode_selected = "6 x 6"
+        play_button_click_sound()  # Phát âm thanh khi nhấn nút
         return "GAME", mode_selected
     return "SELECT_MODE", mode_selected
 
@@ -269,10 +268,18 @@ def handle_setting_events(mouse, current_state):
     return current_state
 
 def main():
-    global current_state
+    global active_input, user_text, password_text
+
+    pygame.init()
+    screen = pygame.display.set_mode((720, 720))
+    pygame.display.set_caption('2048')
+
+    current_state = "MENU"
     mode_selected = None
+
     while True:
         mouse = pygame.mouse.get_pos()
+
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 pygame.quit()
@@ -280,34 +287,40 @@ def main():
             elif ev.type == pygame.MOUSEBUTTONDOWN:
                 if current_state == "MENU":
                     current_state = handle_main_menu_events(mouse, current_state)
+                elif current_state == "LOGIN":
+                    current_state = handle_login_events(mouse, current_state)
                 elif current_state == "SELECT_MODE":
                     current_state, mode_selected = handle_select_mode_events(mouse, mode_selected)
                 elif current_state == "SETTING":
                     current_state = handle_setting_events(mouse, current_state)
-                elif current_state == "LOGIN":
-                    show_login_screen(screen)
-                    # current_state = handle_login_events(mouse, current_state)  # Already handled in show_login_screen
-                elif current_state == "GAME":
-                    game = Game(screen, mode_selected)
-                    for i in range(2):
-                        game.generate_tiles(True)
-                    game.run()
-                    current_state = "MENU"
+            elif ev.type == pygame.KEYDOWN:
+                # Xử lý sự kiện bàn phím khi người dùng nhập văn bản
+                if active_input == 'user':
+                    if ev.key == pygame.K_BACKSPACE:
+                        user_text = user_text[:-1]  # Xóa ký tự cuối
+                    else:
+                        user_text += ev.unicode
+                elif active_input == 'password':
+                    if ev.key == pygame.K_BACKSPACE:
+                        password_text = password_text[:-1]  # Xóa ký tự cuối
+                    else:
+                        password_text += ev.unicode
 
         if current_state == "MENU":
             draw_main_menu(screen)
+        elif current_state == "LOGIN":
+            draw_login_screen(screen)
         elif current_state == "SELECT_MODE":
             draw_select_mode(screen)
         elif current_state == "SETTING":
             draw_setting_menu(screen)
-        elif current_state == "LOGIN":
-            show_login_screen(screen)
         elif current_state == "GAME":
             game = Game(screen, mode_selected)
             for i in range(2):
                 game.generate_tiles(True)
             game.run()
             current_state = "MENU"
+            play_game_over_sound()  # Phát âm thanh khi kết thúc trò chơi
 
 if __name__ == "__main__":
     main()
