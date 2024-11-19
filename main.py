@@ -75,6 +75,25 @@ def check_user_data(username, password):
         return True
     return False
 
+def save_score(username, score, mode):
+    """Lưu điểm vào MongoDB."""
+    user = users_collection.find_one({"username": username})
+    if user:
+        scores = user.get('scores', [])  # Lấy danh sách điểm hiện tại hoặc tạo mới nếu chưa có
+        scores.append({'mode': mode, 'score': score})  # Thêm điểm mới
+        users_collection.update_one({"username": username}, {"$set": {"scores": scores}})
+        print(f"Score saved for {username}: {score} in {mode}")
+
+def get_best_score(username, mode):
+    """Lấy điểm cao nhất từ MongoDB."""
+    user = users_collection.find_one({"username": username})
+    if user:
+        scores = user.get('scores', [])
+        mode_scores = [s['score'] for s in scores if s['mode'] == mode]
+        if mode_scores:
+            return max(mode_scores)
+    return 0  # Trả về 0 nếu không có điểm nào
+   
 def draw_button(screen, rect, text_surface, is_hovered):
     color = HOVER_COLOR if is_hovered else BUTTON_COLOR
     pygame.draw.rect(screen, color, rect, border_radius=15)
@@ -294,18 +313,35 @@ def main():
                 elif current_state == "SETTING":
                     current_state = handle_setting_events(mouse, current_state)
             elif ev.type == pygame.KEYDOWN:
-                # Xử lý sự kiện bàn phím khi người dùng nhập văn bản
                 if active_input == 'user':
                     if ev.key == pygame.K_BACKSPACE:
-                        user_text = user_text[:-1]  # Xóa ký tự cuối
+                        user_text = user_text[:-1]
                     else:
                         user_text += ev.unicode
                 elif active_input == 'password':
                     if ev.key == pygame.K_BACKSPACE:
-                        password_text = password_text[:-1]  # Xóa ký tự cuối
+                        password_text = password_text[:-1]
                     else:
                         password_text += ev.unicode
 
+        # Xử lý game sau khi xử lý sự kiện
+        if current_state == "GAME":
+            game = Game(screen, mode_selected)
+            for i in range(2):
+                game.generate_tiles(True)
+            game.run()
+
+            if game.score_manager.score > 0 and user_text:
+                save_score(user_text, game.score_manager.score, mode_selected)
+
+                best_score = get_best_score(user_text, mode_selected)
+                print(f"Best score for {user_text} in {mode_selected}: {best_score}")
+
+
+            current_state = "MENU"  # Trở về menu sau khi game kết thúc
+            play_game_over_sound()
+
+        # Vẽ giao diện dựa trên trạng thái hiện tại
         if current_state == "MENU":
             draw_main_menu(screen)
         elif current_state == "LOGIN":
@@ -314,13 +350,8 @@ def main():
             draw_select_mode(screen)
         elif current_state == "SETTING":
             draw_setting_menu(screen)
-        elif current_state == "GAME":
-            game = Game(screen, mode_selected)
-            for i in range(2):
-                game.generate_tiles(True)
-            game.run()
-            current_state = "MENU"
-            play_game_over_sound()  # Phát âm thanh khi kết thúc trò chơi
+
+
 
 if __name__ == "__main__":
     main()
